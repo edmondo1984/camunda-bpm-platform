@@ -42,6 +42,12 @@ public interface HistoricActivityStatisticsQuery extends Query<HistoricActivityS
    */
   HistoricActivityStatisticsQuery includeCompleteScope();
 
+  /**
+   * Only select historic activities of process instances that have resolved and
+   * deleted incidents. Include an aggregation of the incidents in the result.
+   */
+  HistoricActivityStatisticsQuery includeClosedIncidents();
+
   /** Only select historic activities of process instances that were started before the given date. */
   HistoricActivityStatisticsQuery startedBefore(Date date);
 

@@ -21,17 +21,17 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 
 import org.camunda.bpm.engine.ProcessEngineConfiguration;
-import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.exception.NullValueException;
 import org.camunda.bpm.engine.history.HistoricActivityStatistics;
 import org.camunda.bpm.engine.history.HistoricActivityStatisticsQuery;
+import org.camunda.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.camunda.bpm.engine.impl.test.PluggableProcessEngineTestCase;
 import org.camunda.bpm.engine.impl.util.ClockUtil;
+import org.camunda.bpm.engine.runtime.Incident;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.test.Deployment;
 import org.camunda.bpm.engine.test.RequiredHistoryLevel;
-import org.junit.Ignore;
 
 /**
  *
@@ -1024,6 +1024,118 @@ public class HistoricActivityStatisticsQueryTest extends PluggableProcessEngineT
     task = statistics.get(0);
     assertEquals(10, task.getInstances());
 
+  }
+
+  @Deployment(resources="org/camunda/bpm/engine/test/history/HistoricActivityStatisticsQueryTest.testSingleTask.bpmn20.xml")
+  public void testQueryIncludeCompletedIncidents() {
+    // given
+    String processDefinitionId = getProcessDefinitionId();
+
+    startProcesses(3);
+    List<ProcessInstance> processInstances = runtimeService.createProcessInstanceQuery().list();
+    String processInstanceWithResolvedIncident = processInstances.get(1).getId();
+    String processInstanceWithIncident = processInstances.get(2).getId();
+    
+    ExecutionEntity execution1 = (ExecutionEntity) runtimeService.createExecutionQuery().processInstanceId(processInstanceWithResolvedIncident).active().singleResult();
+    Incident incident1 = runtimeService
+        .createIncident("foo1", execution1.getId(), execution1.getActivityId(), "bar1");
+    runtimeService.resolveIncident(incident1.getId());
+
+    ExecutionEntity execution2 = (ExecutionEntity) runtimeService.createExecutionQuery().processInstanceId(processInstanceWithIncident).active().singleResult();
+    runtimeService
+        .createIncident("foo2", execution2.getId(), execution2.getActivityId(), "bar2");
+
+    runtimeService.deleteProcessInstance(processInstances.get(2).getId(), "with deleted incident");
+
+    // when
+    HistoricActivityStatisticsQuery query = historyService
+        .createHistoricActivityStatisticsQuery(processDefinitionId)
+        .includeFinished()
+        .includeCompleteScope()
+        .includeCanceled()
+        .includeClosedIncidents()
+        .orderByActivityId()
+        .asc();
+    List<HistoricActivityStatistics> statistics = query.list();
+
+    // then
+    HistoricActivityStatistics taskStats = statistics.get(0);
+
+    assertEquals("task", taskStats.getId());
+    assertEquals(1, taskStats.getInstances());
+    assertEquals(1, taskStats.getCanceled());
+    assertEquals(1, taskStats.getFinished());
+    assertEquals(0, taskStats.getCompleteScope());
+    assertEquals(2, taskStats.getClosedIncidents());
+  }
+
+  @Deployment(resources="org/camunda/bpm/engine/test/history/HistoricActivityStatisticsQueryTest.testSingleTask.bpmn20.xml")
+  public void testQueryIncludeCompletedIncidentsAndProcessInstanceIds() {
+    // given
+    String processDefinitionId = getProcessDefinitionId();
+
+    startProcesses(3);
+    List<ProcessInstance> processInstances = runtimeService.createProcessInstanceQuery().list();
+    String processInstanceWithResolvedIncident = processInstances.get(1).getId();
+    String processInstanceWithIncident = processInstances.get(2).getId();
+    
+    ExecutionEntity execution1 = (ExecutionEntity) runtimeService.createExecutionQuery().processInstanceId(processInstanceWithResolvedIncident).active().singleResult();
+    Incident incident1 = runtimeService
+        .createIncident("foo1", execution1.getId(), execution1.getActivityId(), "bar1");
+    runtimeService.resolveIncident(incident1.getId());
+
+    ExecutionEntity execution2 = (ExecutionEntity) runtimeService.createExecutionQuery().processInstanceId(processInstanceWithIncident).active().singleResult();
+    runtimeService
+        .createIncident("foo2", execution2.getId(), execution2.getActivityId(), "bar2");
+
+    runtimeService.deleteProcessInstance(processInstances.get(2).getId(), "with deleted incident");
+
+    // when
+    HistoricActivityStatisticsQuery query = historyService
+        .createHistoricActivityStatisticsQuery(processDefinitionId)
+        .processInstanceIdIn(processInstanceWithIncident)
+        .includeFinished()
+        .includeCompleteScope()
+        .includeCanceled()
+        .includeClosedIncidents()
+        .orderByActivityId()
+        .asc();
+    List<HistoricActivityStatistics> statistics = query.list();
+
+    // then
+    HistoricActivityStatistics taskStats = statistics.get(0);
+
+    assertEquals("task", taskStats.getId());
+    assertEquals(0, taskStats.getInstances());
+    assertEquals(1, taskStats.getCanceled());
+    assertEquals(1, taskStats.getFinished());
+    assertEquals(0, taskStats.getCompleteScope());
+    assertEquals(1, taskStats.getClosedIncidents());
+  }
+
+  @Deployment(resources="org/camunda/bpm/engine/test/history/HistoricActivityStatisticsQueryTest.testSingleTask.bpmn20.xml")
+  public void testQueryIncludeCompletedIncidentsWhenNoIncidents() {
+    // given
+    String processDefinitionId = getProcessDefinitionId();
+
+    startProcesses(2);
+    List<ProcessInstance> processInstances = runtimeService.createProcessInstanceQuery().list();
+
+    runtimeService.deleteProcessInstance(processInstances.get(0).getId(), null);
+
+    // when
+    HistoricActivityStatisticsQuery query = historyService
+        .createHistoricActivityStatisticsQuery(processDefinitionId)
+        .includeFinished()
+        .includeCompleteScope()
+        .includeCanceled()
+        .includeClosedIncidents()
+        .orderByActivityId()
+        .asc();
+    List<HistoricActivityStatistics> statistics = query.list();
+
+    // then
+    assertEquals(0, statistics.size());
   }
 
   protected void completeProcessInstances() {
